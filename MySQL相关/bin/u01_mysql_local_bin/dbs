@@ -1,0 +1,65 @@
+#!/bin/bash
+
+PORTS_INITED=`ls /u01/ | grep -e "my[0-9][0-9]*" | sed 's#my# #g' | tr -d '\n' | sed 's#^ ##g'`
+PORTS_RUNNING=`ps -elf | grep mysqld | perl -wn -e 'BEGIN{my @arr;}{ m/datadir=(\S+) .*log-error=(\S+) .*socket=(\S+) .*port=(\S+)/ and push @arr,$4;}END{my @sa = sort @arr; print "@sa"; }'`
+PORT=`echo ${MYSQL_HOME} | sed 's#u01##g' | sed 's#my##g' | tr -d '/'`
+
+RED="\e[1;31m"
+BLUE="\e[1;34m"
+GREEN="\e[1;32m"
+RED_BLINK="\e[1;31;5m"
+GREEN_BLINK="\e[1;32;5m"
+NC="\e[0m"
+
+
+if [ "${PORTS_INITED}" == "" ]; then
+    echo "No MySQL has been initiated"
+    exit 1
+else
+    printf "${BLUE}%s${NC}\n" "========================================="
+    printf "${BLUE}%5s %8s   %s${NC}\n" "PORT" "STATUS" "DATABASE"
+    for PORT_INITED in ${PORTS_INITED}
+    do
+        MATCHED=0
+        for PORT_RUNNING in ${PORTS_RUNNING}
+        do
+            if [ "${PORT_INITED}" == "${PORT_RUNNING}" ]; then
+                MATCHED=1
+                break
+            fi
+        done
+
+        dbs=""
+        for db in `ls /u01/my${PORT_INITED}/data/ | grep -v "^mysql$" | grep -v "^performance_schema$" | grep -v "^test$"`
+        do
+            if [ -d /u01/my${PORT_INITED}/data/${db} ]; then
+                dbs="${dbs} ${db}"
+            fi
+        done
+
+        RW=`mysql -udbadmin -palipswxx -S/u01/my${PORT_INITED}/run/mysql.sock -e"show global variables like 'read_only'" 2>&1 | tail -1 | awk '{print $2}'`
+        if [ "${RW}" == "OFF" ]; then
+            RW="RW"
+        elif [ "${RW}" == "ON" ]; then
+            RW="RO"
+        else
+            RW="Down"
+        fi
+
+        if [ ${MATCHED} -eq 1 ]; then
+            if [ "${PORT_INITED}" == "${PORT}" ]; then
+                printf "${GREEN_BLINK}%5s %8s  %s${NC}\n" "${PORT_INITED}" "[${RW}]" "${dbs}"
+            else
+                printf "${GREEN}%5s %8s  %s${NC}\n" "${PORT_INITED}" "[${RW}]" "${dbs}"
+            fi
+        else
+            if [ "${PORT_INITED}" == "${PORT}" ]; then
+                printf "${RED_BLINK}%5s %8s  %s${NC}\n" "${PORT_INITED}" "[${RW}]" "${dbs}" 
+            else
+                printf "${RED}%5s %8s  %s${NC}\n" "${PORT_INITED}" "[${RW}]" "${dbs}"
+            fi
+        fi
+    done
+
+    printf "${BLUE}%s${NC}\n" "========================================="
+fi

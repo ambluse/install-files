@@ -1,0 +1,12 @@
+#!/bin/sh
+#****************************************************************#
+# ScriptName: rdsql
+# Author: weixi.wxz
+# Create Date: 2013-06-18
+# Modify Author: 
+# Modify Date: 2013-06-18
+# Function: 
+#***************************************************************#
+#set -x
+mysqldump  -udbadmin -palipswxx -h127.0.0.1 $@
+exit 0

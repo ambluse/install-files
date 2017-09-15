@@ -1,0 +1,218 @@
+#!/usr/bin/python
+# mysql          Start/Stop the ali-mysql instance.
+#
+# chkconfig: 34 99 99
+# description: ali-mysql
+import commands,sys,getopt,time,subprocess,re
+def runShell(shellcmd,waitag=1):
+    handle = subprocess.Popen(shellcmd, stdout=subprocess.PIPE, shell=True)
+    res=""
+    if waitag==1:res=handle.stdout.read()
+    ret=handle.returncode
+    if ret == 0:ret = True
+    else :ret = False
+    return ret,res
+def execShell(shellcmd):
+    ret,res=commands.getstatusoutput(shellcmd)
+    if ret == 0: ret = True
+    else :ret = False
+    return ret,res
+def verify(num):
+  return ('float', 'int')[round(float(num)) == float(num)]
+def usage():
+  print '''usage:
+   ~~~~Admin MySQL Instance~~~~
+  <1>Personal Action:
+      myadm -P/--port $port -d/--do shutdown/startup/startslave/startmslave/setwrite [-f/--force]
+      Example:  -P 3406 -d shutdown -f
+  -------------------------------
+  <2>Sudo Action For ALL Instance (Be carefully!):
+      myadm start/stop/status/startslave
+  '''
+
+
+def shutMysql(port):
+    shutmysql="/usr/bin/mysqladmin -udbadmin -palipswxx -h127.0.0.1 -P%s shutdown  "%port
+    ret,res=runShell(shutmysql)
+    print "Port %s Instance being shutdown"%port
+    shellcmd="ps -ef|grep mysqld|grep %s|grep -v grep"%port
+    ret=True
+    while ret==True:
+        ret,res=execShell(shellcmd)
+        time.sleep(0.4)
+    return
+def startMysql(port):
+    if checkSudo()==False:sys.exit(9)
+    shellcmd="""ps -ef|grep mysqld|grep %s|grep -v grep"""%port
+    ret,res=execShell(shellcmd)
+    if ret==False:
+      startmysql="/usr/bin/mysqld_unsafe --defaults-file=/u01/my%s/my.cnf --read_only=1 & "%port
+      ret,res=runShell(startmysql,0)
+      print "Port %s Instance being startup"%port
+      time.sleep(0.4)
+    else:
+        print "#####Port %s has being startup ######"%(port)
+    return
+def startSlave(port):
+    shellcmd="mysql -udbadmin -palipswxx -h127.0.0.1 -P%s -e 'start slave'"%port
+    #print shellcmd
+    execShell(shellcmd)
+def startmSlave(port):
+    shellcmd="mysql -udbadmin -palipswxx -h127.0.0.1 -P%s -e 'start multi_slave;'"%port
+    #print shellcmd
+    execShell(shellcmd)
+def setWrite(port):
+    shellcmd="mysql -udbadmin -palipswxx -h127.0.0.1 -P%s -e 'set global read_only=0'"%port
+    print shellcmd
+    execShell(shellcmd)
+def getUserRes():
+    usereponse = raw_input("are you sure to do that?  y/n:   ")
+    if usereponse.upper() in ['Y','YES']:return True
+    else:
+        print "error input"
+        return False
+def getRunPorts():
+    shellcmd=""" ps -ef|grep mysqld|grep datadir|grep -v safe|grep -v grep   """
+    pattern ='port=([0-9]+)'
+    re_port = re.compile(pattern)
+    ret,res=execShell(shellcmd)
+    ports = re_port.findall(res)
+    return ports
+def getDirPorts():
+    ret,ports=execShell("ls /u01|grep -E 'my3' |sed 's/my//'|sort")
+    ports=ports.split("\n")
+    return ports
+def checkStatus():
+    runports=getRunPorts()
+    dirports=getDirPorts()
+    diffports = [val for val in dirports  if val not in runports]
+    commports =  [val for val in dirports if val in runports]
+    #print commports
+    #print diffports
+    for port in commports:
+        print "Port %s Instance is Running"%port
+    for port in diffports:
+        print "Port %s Instance isn't Running"%port
+    if len(diffports)==0:return True
+    else :return False
+
+
+
+def AllStartUP():
+    dirports=getDirPorts()
+    if len(dirports)==0:
+        print "Have no mysql instance exist"
+        sys.exit(9)
+    else:
+        for port in dirports:
+            startMysql(port)
+def AllShutdown():
+    runports=getRunPorts()
+    if len(runports)==0:
+        print "Have no mysql instance running"
+        sys.exit(9)
+    else:
+        for port in runports:
+            shutMysql(port)
+def ALLStartSlave():
+    runports=getRunPorts()
+    if len(runports)==0:
+        print "Have no mysql instance running"
+        sys.exit(9)
+    else:
+        for port in runports:
+            startSlave(port)
+def ALLMStartSlave():
+    runports=getRunPorts()
+    if len(runports)==0:
+        print "Have no mysql instance running"
+        sys.exit(9)
+    else:
+        for port in runports:
+            startmslave(port)
+def checkSudo():
+    ret,res=execShell("id -u")
+    if int(res) != 0:
+        print "Please use sudo to run"
+        return False
+    return True
+def ALLSetWrite():
+    runports=getRunPorts()
+    if len(runports)==0:
+        print "Have no mysql instance running"
+        sys.exit(9)
+    else:
+      for port in runports:
+         setWrite(port)
+def sudoJob(jobtype):
+    if checkSudo()==False:sys.exit(9)
+    if jobtype=="start":
+        AllStartUP()
+    elif jobtype=="stop":
+        AllShutdown()
+    elif jobtype=="status":
+        if checkStatus()==False:sys.exit(9)
+        else:sys.exit(0)
+    elif jobtype=="startslave":
+        ALLStartSlave()
+    elif jobtype=="startmslave":
+        ALLMStartSlave()
+    elif jobtype=="setwrite":
+        ALLSetWrite()
+def personJob(jobtype,port,forcetag):
+    if jobtype=="startup"  :
+        startMysql(port)
+    elif jobtype=="shutdown" :
+        if forcetag==0:
+            print "You are ready to shutdown Port %s"%port
+            if getUserRes()==False:sys.exit(0)
+        shutMysql(port)
+    elif  jobtype=="startslave" :
+        startSlave(port)
+def mainjob():
+  jobtype=""
+  try:
+    if "-h" in sys.argv or "--help" in sys.argv or len(sys.argv)<2:
+        usage()
+        sys.exit(0)
+    elif len(sys.argv)==2 :
+        if sys.argv[-1].lower() not in sudoaction:
+            print "error action name"
+            print sudoaction
+            usage()
+            sys.exit(9)
+        jobtype=sys.argv[-1].lower()
+        sudoJob(jobtype)
+        sys.exit(0)
+    opts,args=getopt.getopt(sys.argv[1:], "P:d:f", ["port=","do=","force"])
+    '''myadm -P/--port $port -d--do shutdown/startup [-f/--force]'''
+    forcetag=0
+    for opt, arg in opts:
+        if opt in ("-P", "--port"):
+            port=arg
+            if verify(port)!='int':
+                print "illegal port"
+                usage()
+                sys.exit(9)
+        elif opt in ("-d", "--do"):
+            jobtype=arg
+            if jobtype not in personaction:
+                print "illegal do type"
+                print personaction
+                usage()
+                sys.exit(9)
+        elif opt in ("-f", "--do"):
+            forcetag=1
+    if jobtype == "" or  verify(port)!='int':
+        print "args wrong"
+        sys.exit(9)
+    personJob(jobtype,port,forcetag)
+  except Exception, e:
+      usage()
+      print e
+      sys.exit(0)
+
+
+sudoaction=['start','stop','status','startslave','startmslave','setwrite']
+personaction=['startup','shutdown','startslave','startmslave','setwrite']
+mainjob()

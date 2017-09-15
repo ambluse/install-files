@@ -1,0 +1,3 @@
+[ -z "$1" ] && PORT=3306 || PORT=$1
+echo Entry Port ==== $PORT
+mysql -A -uroot -h127.0.0.1 -P${PORT}
